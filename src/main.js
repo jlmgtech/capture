@@ -105,6 +105,73 @@ const tools = [
 ];
 
 async function main(slot) {
+    let usr = "";
+    for (;;) {
+        const rsp = slot.capture(
+            `
+            ${input({
+                onchange(value) {usr=value},
+                type: "text",
+                value: usr,
+                placeholder: "username",
+            })}
+            <button onclick="yeet('${slot}')">OK</button>
+            `, false);
+
+        await rsp; // when the button is clicked.
+        console.log("username %s", usr);
+    }
+}
+
+function input(opts) {
+    const slot = new Slot();
+    let fields = [];
+    for (const [k, v] of Object.entries(opts)) {
+        // TODO - handle quotes
+        fields.push(`${k}="${v}"`);
+    }
+    setTimeout(async () => {
+        for (;;) {
+            const rsp = await slot.capture(`<input ${fields.join(" ")} name="field" onchange="yeet('${slot}')" />`);
+            opts.onchange(rsp.field);
+        }
+    });
+    return `<div id="${slot}"></div>`;
+}
+
+//// this is a crazy pattern. Returning a closure for each iteration:
+//function countforever(output) {
+//    let i = 0;
+//    return function self() {
+//        output[0] = ++i;
+//        return self;
+//    };
+//}
+//window.countforever = countforever;
+
+async function inputField(slot, value, placeholder) {
+    let feedback = "";
+    for (;;) {
+        const rsp = await slot.capture(`
+            <input
+                type="text"
+                name="field"
+                value="${value}"
+                placeholder="${placeholder}"
+                onchange="yeet('${slot}')"
+            />
+            <div style="color:red">${feedback}</div>
+            `
+        );
+        if (rsp.field) {
+            return rsp.field;
+        } else {
+            feedback = "no input";
+        }
+    }
+}
+
+async function oldmain(slot) {
     const layout = new Slot("menu");
     const app = new Slot("app");
     slot.show(`

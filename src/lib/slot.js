@@ -87,7 +87,7 @@ export class Slot {
         this.el().innerHTML = html;
     }
 
-    capture(html, clear=false) {
+    capture(html, clear=true) {
         return new Promise((resolve, _reject) => {
             const beforePayload = {};
             getPayload(beforePayload, this.el());
