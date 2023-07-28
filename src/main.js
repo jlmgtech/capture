@@ -105,21 +105,97 @@ const tools = [
 ];
 
 async function main(slot) {
-    let usr = "";
     for (;;) {
-        const rsp = slot.capture(
-            `
-            ${input({
-                onchange(value) {usr=value},
-                type: "text",
-                value: usr,
-                placeholder: "username",
-            })}
-            <button onclick="yeet('${slot}')">OK</button>
-            `, false);
+        const contentSlot = new Slot();
+        slot.show(`
+            <div id="${contentSlot}" style="width: 80%;margin:auto; padding-top:2em;"></div>
+        `);
 
-        await rsp; // when the button is clicked.
-        console.log("username %s", usr);
+        const user = await loginForm(contentSlot);
+        //const user = {usr: "admin", pwd: "admin"};
+        contentSlot.show(`
+            <div> Welcome, ${user.usr}. </div>
+        `);
+        await delay(1000);
+        contentSlot.show(`
+            <div> Welcome, ${user.usr}. </div>
+            <div> What would you like to do? </div>
+        `);
+        await delay(1000);
+        const menuSlot = new Slot();
+        contentSlot.show(`
+            <div> Welcome, ${user.usr}. </div>
+            <div> What would you like to do? </div>
+            <div id="${menuSlot}" style="display:flex; flex-wrap: wrap; justify-content: space-around;"></div>
+        `);
+
+        for (;;) {
+            let menuStr = "";
+            let rsp = null;
+            for (const tool of tools) {
+                menuStr += `
+                    <div style="width: 10em; height: 10em; display: flex; flex-direction: column; justify-content: center; align-items: center; margin: 1em;" onclick="yeet('${menuSlot}', '${tool.name}')">
+                        <div style="font-size: 3em;">${tool.icon}</div>
+                        <div>${tool.name}</div>
+                    </div>
+                `;
+                rsp = menuSlot.capture(menuStr);
+                await delay(50);
+            }
+            const result = (await rsp).args[0];
+            menuSlot.show(`you chose "${result}"`);
+            await delay(1500);
+            if (result === "Logout") {
+                menuSlot.show("goodbye!");
+                await delay(1500);
+                break;
+            }
+        }
+
+    }
+}
+
+async function loginForm(slot) {
+    const loginSlot = new Slot("login");
+    for (;;) {
+        slot.show(`
+                <h1>XSF Login</h1>
+                <hr />
+                <div id="${loginSlot}"></div>
+        `);
+
+        const usr = await inputForm(loginSlot, {placeholder: "username", type: "text"});
+        const pwd = await inputForm(loginSlot, {placeholder: "password", type: "password"});
+        loginSlot.show(`please wait...`);
+        await delay(1000);
+        if (usr === "admin" && pwd === "admin") {
+            return {usr, pwd};
+        }
+        await loginSlot.capture(`
+            <div>invalid username or password <button onclick="yeet('${loginSlot}')">..&uarr;</button></div>
+        `);
+    }
+}
+
+async function inputForm(slot, {placeholder, type}) {
+    let feedback = "";
+    for (;;) {
+        const rsp = await slot.capture(`
+            <div>
+                <input type="${type}" value="" placeholder="${placeholder}" name="usr" />
+                <button onclick="yeet('${slot}')">&rarr;</button>
+            </div>
+            <div style="color: #68ff00">${feedback}</div>
+        `);
+        feedback = "";
+
+        rsp.usr = rsp.usr.trim();
+        if (!rsp.usr) {
+            feedback = `${placeholder} is required`;
+            continue;
+        }
+
+        return rsp.usr;
     }
 }
 
@@ -127,16 +203,16 @@ function input(opts) {
     const slot = new Slot();
     let fields = [];
     for (const [k, v] of Object.entries(opts)) {
-        // TODO - handle quotes
+        if (k === "onchange") continue;
         fields.push(`${k}="${v}"`);
     }
-    setTimeout(async () => {
+    Promise.resolve().then(async () => {
         for (;;) {
-            const rsp = await slot.capture(`<input ${fields.join(" ")} name="field" onchange="yeet('${slot}')" />`);
+            const rsp = await slot.capture(`<input ${fields.join(" ")} name="field" onchange="yeet('${slot}')" />`, false);
             opts.onchange(rsp.field);
         }
     });
-    return `<div id="${slot}"></div>`;
+    return `<span id="${slot}"></span>`;
 }
 
 //// this is a crazy pattern. Returning a closure for each iteration:
