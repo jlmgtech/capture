@@ -105,6 +105,36 @@ const tools = [
 ];
 
 async function main(slot) {
+
+    for (;;) {
+        let usr = "", pwd = "";
+        let feedback = "";
+        for (;;) {
+            console.log("drawing ", Math.random());
+            await slot.capture(`
+                <div>${feedback}</div>
+                ${input({type: "text", value:usr, placeholder: "user", onchange(val){usr=val}})}
+                ${input({type: "text", value:pwd, placeholder: "password", onchange(val){pwd=val}})}
+                <input type="submit" onclick="yeet('${slot}')" value="yeet" />
+            `);
+
+            feedback = "";
+            if (!usr) {
+                feedback += "<div>please enter a username</div>";
+            }
+            if (!pwd) {
+                feedback += "<div>please enter a password</div>";
+            }
+            if (!feedback) {
+                break;
+            }
+        }
+        slot.show(`You entered '${usr}', '${pwd}'.`);
+        await delay(1000);
+        if (usr === "admin" && pwd === "admin") {
+            break;
+        }
+    }
     const layout = new Slot("menu");
     const app = new Slot("app");
     slot.show(`
@@ -118,6 +148,17 @@ async function main(slot) {
     `);
     showMenu(layout);
     showApp(app);
+}
+
+function input({type, placeholder, onchange, value}) {
+    const slot = new Slot();
+    Promise.resolve().then(async () => {
+        for (;;) {
+            const rsp = await slot.capture(`<input type="${type}" value="${value}" name='field' placeholder="${placeholder}" onchange="yeet('${slot}')" />`);
+            onchange(rsp.field);
+        }
+    });
+    return `<span id="${slot}"></span>`;
 }
 
 async function showApp(slot) {
