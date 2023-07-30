@@ -16,6 +16,39 @@ window.yeet = (slotId, ...args) => {
 const reserved_ids = {};
 let lastID = 0;
 
+
+function easeOutQuad(t) {
+    return t * (2 - t);
+}
+function easeInQuad(t) {
+    return t * t;
+}
+export function easeInOutQuad(t) {
+    return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+export async function tween(duration, interpolationFunc, callback) {
+    return new Promise((resolve, reject) => {
+        const start = Date.now();
+        const end = start + duration;
+        function performUpdate() {
+            try {
+                if (Date.now() < end) {
+                    const progress = (Date.now() - start) / duration;
+                    callback(interpolationFunc(progress));
+                    requestAnimationFrame(performUpdate);
+                } else {
+                    const progress = (Date.now() - start) / duration;
+                    callback(1);
+                    resolve();
+                }
+            } catch (e) {
+                reject(e);
+            }
+        }
+        performUpdate();
+    });
+}
+
 export function init(rootID, entrypoint) {
     const el = document.getElementById(rootID);
 
@@ -83,22 +116,39 @@ export class Slot {
         return el;
     }
 
-    show(html) {
+    async show(html, opts) {
+        // first, run the "leave" function on the current slot:
+        if (typeof this._customLeave === "function") {
+            await this._customLeave(this.el());
+        }
         this.el().innerHTML = html;
+        this._customLeave = opts?.leave ?? (async function() {});
+        return new Promise((resolve) => {
+            console.log("start end anim");
+            const enter = opts?.enter ?? (async function(){});
+            enter(this.el()).then(() => {
+                console.log("end anim done");
+                resolve();
+            });
+        });
     }
 
-    capture(html, clear=false) {
+    capture(html, opts) {
         return new Promise((resolve, _reject) => {
             const beforePayload = {};
             getPayload(beforePayload, this.el());
-            this.el().innerHTML = html;
-            if (clear !== true) {
+            const startAnimationDelay = this.show(html, opts);
+            //this.el().innerHTML = html;
+            if (opts?.clear !== true) {
                 // preserve the inputs that contribute to the payload:
                 applyPayload(beforePayload, this.el());
             }
             returners[this.id] = (value) => {
-                resolve(value);
-                this.destroy();
+                // wait AT LEAST as long as the intro animation before resolving the promise:
+                startAnimationDelay.then(() => {
+                    resolve(value);
+                    this.destroy();
+                });
             };
         });
     }

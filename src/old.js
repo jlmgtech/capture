@@ -1,4 +1,4 @@
-import {Slot, init, delay, dispatch, tween, easeInOutQuad} from "./lib/slot";
+import {Slot, init, delay, dispatch} from "./lib/slot";
 
 
 const preamble = `
@@ -105,25 +105,54 @@ const tools = [
 ];
 
 async function main(slot) {
+    for (;;) {
+        let usr = "", pwd = "";
+        let feedback = "";
+        for (;;) {
+            console.log("drawing ", Math.random());
+            await slot.capture(`
+                <div>${feedback}</div>
+                ${input({type: "text", value:usr, placeholder: "user", onchange(val){usr=val}})}
+                ${input({type: "text", value:pwd, placeholder: "password", onchange(val){pwd=val}})}
+                <input type="submit" onclick="yeet('${slot}')" value="yeet" />
+            `);
 
+            feedback = "";
+            if (!usr) {
+                feedback += "<div>please enter a username</div>";
+            }
+            if (!pwd) {
+                feedback += "<div>please enter a password</div>";
+            }
+            if (!feedback) {
+                break;
+            }
+        }
+        slot.show(`You entered '${usr}', '${pwd}'.`);
+        await delay(1000);
+        if (usr === "admin" && pwd === "admin") {
+            break;
+        }
+    }
     for (;;) {
         const contentSlot = new Slot();
-        await slot.show(`
+        slot.show(`
             <div id="${contentSlot}" style="width: 80%;margin:auto; padding-top:2em;"></div>
         `);
+
         const user = await loginForm(contentSlot);
         //const user = {usr: "admin", pwd: "admin"};
-        await contentSlot.show(`
+        contentSlot.show(`
             <div> Welcome, ${user.usr}. </div>
         `);
         await delay(1000);
-        await contentSlot.show(`
+        contentSlot.show(`
             <div> Welcome, ${user.usr}. </div>
             <div> What would you like to do? </div>
         `);
         await delay(1000);
         const menuSlot = new Slot();
-        await contentSlot.show(`
+        contentSlot.show(`
             <div> Welcome, ${user.usr}. </div>
             <div> What would you like to do? </div>
             <div id="${menuSlot}" style="display:flex; flex-wrap: wrap; justify-content: space-around;"></div>
@@ -143,10 +172,10 @@ async function main(slot) {
                 await delay(50);
             }
             const result = (await rsp).args[0];
-            await menuSlot.show(`you chose "${result}"`);
+            menuSlot.show(`you chose "${result}"`);
             await delay(1500);
             if (result === "Logout") {
-                await menuSlot.show("goodbye!");
+                menuSlot.show("goodbye!");
                 await delay(1500);
                 break;
             }
@@ -158,27 +187,15 @@ async function main(slot) {
 async function loginForm(slot) {
     const loginSlot = new Slot("login");
     for (;;) {
-
-        await slot.show(`
+        slot.show(`
                 <h1>XSF Login</h1>
                 <hr />
                 <div id="${loginSlot}"></div>
-        `,
-            {
-                async enter(el) {
-                    const time = 500;
-                    const then = Date.now() + time;
-                    while (Date.now() < then) {
-                        el.style.opacity = 1 - ((then - Date.now()) / time);
-                        await delay(0);
-                    }
-                }
-            }
-        );
+        `);
 
         const usr = await inputForm(loginSlot, {placeholder: "username", type: "text"});
         const pwd = await inputForm(loginSlot, {placeholder: "password", type: "password"});
-        await loginSlot.show(`please wait...`);
+        loginSlot.show(`please wait...`);
         await delay(1000);
         if (usr === "admin" && pwd === "admin") {
             return {usr, pwd};
@@ -186,7 +203,28 @@ async function loginForm(slot) {
         await loginSlot.capture(`
             <div>invalid username or password <button onclick="yeet('${loginSlot}')">..&uarr;</button></div>
         `);
+    }
+}
 
+async function inputForm(slot, {placeholder, type}) {
+    let feedback = "";
+    for (;;) {
+        const rsp = await slot.capture(`
+            <div>
+                <input type="${type}" value="" placeholder="${placeholder}" name="usr" />
+                <button onclick="yeet('${slot}')">&rarr;</button>
+            </div>
+            <div style="color: #68ff00">${feedback}</div>
+        `);
+        feedback = "";
+
+        rsp.usr = rsp.usr.trim();
+        if (!rsp.usr) {
+            feedback = `${placeholder} is required`;
+            continue;
+        }
+
+        return rsp.usr;
     }
 }
 
@@ -199,59 +237,11 @@ function input(opts) {
     }
     Promise.resolve().then(async () => {
         for (;;) {
-            const rsp = await slot.capture(`<input ${fields.join(" ")} name="field" onchange="yeet('${slot}')" />`, {clear:false});
+            const rsp = await slot.capture(`<input ${fields.join(" ")} name="field" onchange="yeet('${slot}')" />`, false);
             opts.onchange(rsp.field);
         }
     });
     return `<span id="${slot}"></span>`;
-}
-
-async function inputForm(slot, {placeholder, type}) {
-    let feedback = "";
-    for (;;) {
-
-        // Animation is an action and a delay.
-        // The action is a promise that resolves when the animation is complete.
-        // Animations happen at transitions between calls to show/capture.
-        // There's an exit and an enter animation for each call.
-        // The exit animation can happen after a yeet or when another call overrides the contents of the current slot.
-        // Exit animations add to the delay on the next call.
-        // Animations do NOT happen if the capture/show call does not clear the slot first (clear=true).
-        const rsp = await slot.capture(`
-            <form onsubmit="return false; yeet('${slot}')">
-                <div>
-                    <input type="${type}" value="" placeholder="${placeholder}" name="usr" />
-                    <button onclick="yeet('${slot}')">&rarr;</button>
-                </div>
-                <div style="color: #68ff00">${feedback}</div>
-            </form>
-        `, {
-            async enter(el) {
-                el.children[0].style.transform = "translateY(2em)";
-                await tween(500, easeInOutQuad, (progress) => {
-                    el.children[0].style.transform = `translateY(${(1 - progress) * 2}em)`;
-                    el.children[0].style.opacity = progress;
-                });
-                el.querySelector("input").focus();
-            },
-            async leave(el) {
-                await tween(500, easeInOutQuad, (progress) => {
-                    el.children[0].style.transform = `translateY(${progress * 2}em)`;
-                    el.children[0].style.opacity = 1 - progress;
-                });
-            },
-        });
-        feedback = "";
-
-
-        rsp.usr = rsp.usr.trim();
-        if (!rsp.usr) {
-            feedback = `${placeholder} is required`;
-            continue;
-        }
-
-        return rsp.usr;
-    }
 }
 
 //// this is a crazy pattern. Returning a closure for each iteration:
@@ -263,5 +253,75 @@ async function inputForm(slot, {placeholder, type}) {
 //    };
 //}
 //window.countforever = countforever;
+
+async function inputField(slot, value, placeholder) {
+    let feedback = "";
+    for (;;) {
+        const rsp = await slot.capture(`
+            <input
+                type="text"
+                name="field"
+                value="${value}"
+                placeholder="${placeholder}"
+                onchange="yeet('${slot}')"
+            />
+            <div style="color:red">${feedback}</div>
+            `
+        );
+        if (rsp.field) {
+            return rsp.field;
+        } else {
+            feedback = "no input";
+        }
+    }
+}
+
+async function oldmain(slot) {
+    const layout = new Slot("menu");
+    const app = new Slot("app");
+    slot.show(`
+        <br />
+        <h1 style="text-align:center">Admin Panel</h1>
+        <hr />
+        <div style="display:flex;">
+            <div id="menu">please wait</div>
+            <div id="app"></div>
+        </div>
+    `);
+    showMenu(layout);
+    showApp(app);
+}
+
+function input({type, placeholder, onchange, value}) {
+    const slot = new Slot();
+    Promise.resolve().then(async () => {
+        for (;;) {
+            const rsp = await slot.capture(`<input type="${type}" value="${value}" name='field' placeholder="${placeholder}" onchange="yeet('${slot}')" />`);
+            onchange(rsp.field);
+        }
+    });
+    return `<span id="${slot}"></span>`;
+}
+
+async function showApp(slot) {
+    //initApps(slot);
+    slot.show(`<div style="margin:1em">select a tool</div>`);
+    slot.on("menuClick", async (name) => {
+        slot.show(`<div style="margin:1em">${name}</div>`);
+    });
+}
+
+async function showMenu(layout) {
+    for (;;) {
+        const {args: [name]} = await layout.capture(`
+            <ul style="list-style:none">
+                ${tools.map((tool) => `
+                    <li style="margin:1em;cursor:pointer;" onclick="yeet('${layout}', '${tool.name}')">${tool.icon} ${tool.name}</li>
+                `).join("")}
+            </ul>
+        `);
+        dispatch("menuClick", name);
+    }
+}
 
 init("root", main);
