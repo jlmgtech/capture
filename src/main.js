@@ -113,46 +113,134 @@ async function main(slot) {
         `);
         const user = await loginForm(contentSlot);
         //const user = {usr: "admin", pwd: "admin"};
-        await contentSlot.show(`
-            <div> Welcome, ${user.usr}. </div>
-        `);
-        await delay(1000);
-        await contentSlot.show(`
-            <div> Welcome, ${user.usr}. </div>
-            <div> What would you like to do? </div>
-        `);
-        await delay(1000);
-        const menuSlot = new Slot();
-        await contentSlot.show(`
-            <div> Welcome, ${user.usr}. </div>
-            <div> What would you like to do? </div>
-            <div id="${menuSlot}" style="display:flex; flex-wrap: wrap; justify-content: space-around;"></div>
-        `);
 
-        for (;;) {
-            let menuStr = "";
-            let rsp = null;
-            for (const tool of tools) {
-                menuStr += `
-                    <div style="width: 10em; height: 10em; display: flex; flex-direction: column; justify-content: center; align-items: center; margin: 1em;" onclick="yeet('${menuSlot}', '${tool.name}')">
+        const path = "/" + window.location.pathname.split("/").filter(Boolean).join("/");
+        switch (path) {
+            case "/thing":
+                await thing(contentSlot, user);
+                break;
+            case "/test":
+                await testTool(contentSlot, user);
+                break;
+            default:
+                await appMenu(contentSlot, user);
+                break;
+        }
+    }
+}
+
+async function thing(slot, user) {
+    await slot.show("You've been routed to THING");
+    await delay(1000);
+    await appMenu(slot, user);
+}
+
+async function appMenu(contentSlot, user) {
+    await contentSlot.show(`
+        <div style="opacity:0"> Welcome, ${user.usr}. </div>
+    `, {
+        async enter(el) {
+            const div = el.getElementsByTagName("div")[0];
+            await tween(1000, easeInOutQuad, t => {
+                div.style.opacity = t;
+            });
+        }
+    });
+    //await delay(1000);
+    await contentSlot.show(`
+        <div> Welcome, ${user.usr}. </div>
+        <div style="opacity:0"> What would you like to do? </div>
+    `, {
+        async enter(el) {
+            const div = el.getElementsByTagName("div")[1];
+            await tween(1000, easeInOutQuad, t => {
+                div.style.opacity = t;
+            });
+        }
+    });
+    //await delay(1000);
+    const menuSlot = new Slot();
+    await contentSlot.show(`
+        <div> Welcome, ${user.usr}. </div>
+        <div> What would you like to do? </div>
+        <div id="${menuSlot}" style="display:flex; flex-wrap: wrap; justify-content: space-around;"></div>
+    `);
+
+    for (;;) {
+        const chosenTool = await captureTool(menuSlot, user);
+        await menuSlot.show(`you chose "${chosenTool}"`);
+        await delay(1500);
+        if (chosenTool === "Logout") {
+            await menuSlot.show("goodbye!");
+            await delay(1500);
+            break;
+        }
+    }
+
+}
+
+async function testTool(slot, user) {
+    for (;;) {
+        const [_chosenTool] = await Promise.all([
+            captureTool(slot, user),
+            delay(500).then(() => window.yeet(slot.id, "folders")),
+        ]);
+    }
+}
+
+async function captureTool(slot, user) {
+    const rsp = await slot.capture(`
+        <div class="container">
+            <div class="row text-center">
+                ${tools.map(tool => `
+                    <div
+                        class="col-lg-2 col-md-3 col-sm-4 col-xs-6 tool ${tool.name.replace(" ", "-")}"
+                        style="opacity:0;cursor:pointer;trasform: perspective(800px)" onclick="yeet('${slot}', '${tool.name}')">
+                        <br />
                         <div style="font-size: 3em;">${tool.icon}</div>
                         <div>${tool.name}</div>
+                        <br />
                     </div>
-                `;
-                rsp = menuSlot.capture(menuStr);
-                await delay(50);
+                `).join("")}
+            </div>
+        </div>
+    `, {
+        async onYeet(el, data) {
+            const tname = data.args[0].replace(" ", "-");
+            const tool = el.querySelector(".tool." + tname);
+            const othertools = [...el.querySelectorAll(".tool")].filter(t => t !== tool);
+            await Promise.all([
+                // fade out all the other tools
+                Promise.all(othertools.map(tool => tween(500, easeInOutQuad, t => {
+                    tool.style.opacity = 1 - t;
+                }))),
+                    // make the clicked tool bigger
+                tween(500, easeInOutQuad, t => {
+                    tool.style.transform = `perspective(800px) translateZ(${1 + t * 300}px)`;
+                }).then(() =>
+                    // fade out the tool that was clicked
+                    tween(1000, easeInOutQuad, t => {
+                        tool.style.opacity = 1 - t;
+                    })
+                ),
+            ]);
+            return data;
+        },
+        async enter(el) {
+            // animate all the tools in, one at a time, using the tween(ms, callback) function
+            const tools = el.querySelectorAll(".tool");
+            const prms = [];
+            for (const tool of tools) {
+                await delay(20);
+                prms.push(tween(250, easeInOutQuad, (t) => {
+                    tool.style.opacity = t;
+                }));
             }
-            const result = (await rsp).args[0];
-            await menuSlot.show(`you chose "${result}"`);
-            await delay(1500);
-            if (result === "Logout") {
-                await menuSlot.show("goodbye!");
-                await delay(1500);
-                break;
-            }
-        }
-
-    }
+            await Promise.all(prms);
+        },
+        async leave(el) { },
+    });
+    return rsp.args[0];
 }
 
 async function loginForm(slot) {
@@ -184,7 +272,7 @@ async function loginForm(slot) {
             return {usr, pwd};
         }
         await loginSlot.capture(`
-            <div>invalid username or password <button onclick="yeet('${loginSlot}')">..&uarr;</button></div>
+            <div>invalid username or password <button class="btn btn-primary" onclick="yeet('${loginSlot}')">try again &uarr;</button></div>
         `);
 
     }
@@ -219,9 +307,15 @@ async function inputForm(slot, {placeholder, type}) {
         // Animations do NOT happen if the capture/show call does not clear the slot first (clear=true).
         const rsp = await slot.capture(`
             <form onsubmit="return false; yeet('${slot}')">
-                <div>
-                    <input type="${type}" value="" placeholder="${placeholder}" name="usr" />
-                    <button onclick="yeet('${slot}')">&rarr;</button>
+                <div class="container">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <input class="form-control" type="${type}" value="" placeholder="${placeholder}" name="usr" />
+                        </div>
+                        <div class="col-md-6 col-sm-12 text-center">
+                            <button class="btn btn-primary" onclick="yeet('${slot}')">next &rarr;</button>
+                        </div>
+                    </div>
                 </div>
                 <div style="color: #68ff00">${feedback}</div>
             </form>
@@ -244,6 +338,7 @@ async function inputForm(slot, {placeholder, type}) {
         feedback = "";
 
 
+        console.log(rsp);
         rsp.usr = rsp.usr.trim();
         if (!rsp.usr) {
             feedback = `${placeholder} is required`;

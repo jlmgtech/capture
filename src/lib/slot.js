@@ -124,10 +124,8 @@ export class Slot {
         this.el().innerHTML = html;
         this._customLeave = opts?.leave ?? (async function() {});
         return new Promise((resolve) => {
-            console.log("start end anim");
             const enter = opts?.enter ?? (async function(){});
             enter(this.el()).then(() => {
-                console.log("end anim done");
                 resolve();
             });
         });
@@ -143,12 +141,13 @@ export class Slot {
                 // preserve the inputs that contribute to the payload:
                 applyPayload(beforePayload, this.el());
             }
-            returners[this.id] = (value) => {
+            returners[this.id] = async (value) => {
                 // wait AT LEAST as long as the intro animation before resolving the promise:
-                startAnimationDelay.then(() => {
-                    resolve(value);
-                    this.destroy();
-                });
+                const onYeet = opts?.onYeet ?? (async (_, val) => val);
+                await startAnimationDelay;
+                const newval = await onYeet(this.el(), value);
+                resolve(newval);
+                this.destroy();
             };
         });
     }
