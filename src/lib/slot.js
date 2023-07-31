@@ -1,61 +1,14 @@
-const returners = {};
-window.returners = returners;
-window.yeet = (slotId, ...args) => {
-    if (typeof slotId !== "string") {
-        throw new Error("yeet() must be called with a slot ID, received: "+slotId);
-    }
-    const payload = {};
-    getPayload(payload, document.getElementById(slotId));
-    if (payload.args) {
-        console.warn("yeet() called with a slot ID that has an input named 'args', this will be overwritten by the arguments passed to yeet().");
-    }
-    payload.args = args;
-    returners[slotId](payload);
-};
+import Capture from "./plugins/capture.js";
+import Dispatcher from "./plugins/dispatcher.js";
 
 const reserved_ids = {};
-let lastID = 0;
-
-
-function easeOutQuad(t) {
-    return t * (2 - t);
-}
-function easeInQuad(t) {
-    return t * t;
-}
-export function easeInOutQuad(t) {
-    return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-}
-export async function tween(duration, interpolationFunc, callback) {
-    return new Promise((resolve, reject) => {
-        const start = Date.now();
-        const end = start + duration;
-        function performUpdate() {
-            try {
-                if (Date.now() < end) {
-                    const progress = (Date.now() - start) / duration;
-                    callback(interpolationFunc(progress));
-                    requestAnimationFrame(performUpdate);
-                } else {
-                    const progress = (Date.now() - start) / duration;
-                    callback(1);
-                    resolve();
-                }
-            } catch (e) {
-                reject(e);
-            }
-        }
-        performUpdate();
-    });
-}
-
 export function init(rootID, entrypoint) {
     const el = document.getElementById(rootID);
 
     const cleanupObserver = new MutationObserver((_mutations, _observer) => {
         for (const id of Object.keys(reserved_ids)) {
             if (document.getElementById(id) === null) {
-                reserved_ids[id].destroy();
+                reserved_ids[id].leave();
             }
         }
     });
@@ -69,38 +22,37 @@ export function init(rootID, entrypoint) {
     return slot;
 }
 
-const listeners = {};
-window.listeners = listeners;
-export function dispatch(event, ...args) {
-    const cbs = listeners[event];
-    if (cbs) {
-        for (const listener of cbs) {
-            listener(...args);
-        }
-    }
-}
-
+let lastID = 0;
 export class Slot {
+
     constructor(id) {
         this.id = id ?? `slot_${lastID++}`;
         if (reserved_ids[this.id]) {
             throw new Error("Slot ID already in use: "+this.id);
         }
         reserved_ids[this.id] = this;
-        this.listeners = {};
+        this.plugins = [
+            new Capture(this),
+            new Dispatcher(this),
+        ];
+        this.plugins_call("onCreate");
     }
 
-    destroy() {
-        // called if the DOM element is removed OR if the slot capture is resolved.
-        returners[this.id] = null;
-        delete returners[this.id];
-        delete reserved_ids[this.id];
-        for (const [topic, callbacks] of Object.entries(this.listeners)) {
-            listeners[topic] = listeners[topic].filter((cb) => !callbacks.includes(cb));
+    async plugins_call(func="", ...args) {
+        for (const plugin of this.plugins) {
+            if (typeof plugin[func] === "function") {
+                await plugin[func](...args);
+            }
         }
-        this.listeners = {};
     }
 
+    leave() {
+        // called if the DOM element is removed OR if the slot capture is resolved.
+        delete reserved_ids[this.id];
+        this.plugins_call("onLeave");
+    }
+
+    // dispatcher: TODO - somehow put this in your plugin
     on(event, callback) {
         this.listeners[event] = this.listeners[event] ?? [];
         this.listeners[event].push(callback);
@@ -117,37 +69,22 @@ export class Slot {
     }
 
     async show(html, opts) {
-        // first, run the "leave" function on the current slot:
-        if (typeof this._customLeave === "function") {
-            await this._customLeave(this.el());
-        }
+        await this.plugins_call("onBeforeShow", opts??{});
         this.el().innerHTML = html;
-        this._customLeave = opts?.leave ?? (async function() {});
-        return new Promise((resolve) => {
-            const enter = opts?.enter ?? (async function(){});
-            enter(this.el()).then(() => {
-                resolve();
-            });
-        });
+        return await this.plugins_call("onShow", opts??{});
     }
 
+    // capture: TODO - somehow put this in your plugin
     capture(html, opts) {
-        return new Promise((resolve, _reject) => {
-            const beforePayload = {};
-            getPayload(beforePayload, this.el());
-            const startAnimationDelay = this.show(html, opts);
-            //this.el().innerHTML = html;
-            if (opts?.clear !== true) {
-                // preserve the inputs that contribute to the payload:
-                applyPayload(beforePayload, this.el());
-            }
+        return new Promise(async (resolve, _reject) => {
+            await this.plugins_call("onCaptureBeforeShow", opts??{});
+            const prm = this.show(html, opts);
+            await this.plugins_call("onCaptureShow", opts??{}, prm);
             returners[this.id] = async (value) => {
+                await this.plugins_call("onCaptureResolve", opts??{});
                 // wait AT LEAST as long as the intro animation before resolving the promise:
-                const onYeet = opts?.onYeet ?? (async (_, val) => val);
-                await startAnimationDelay;
-                const newval = await onYeet(this.el(), value);
-                resolve(newval);
-                this.destroy();
+                resolve(value);
+                this.leave();
             };
         });
     }
@@ -157,33 +94,76 @@ export class Slot {
     }
 }
 
-function getPayload(payload, el) {
-    if (el.name) {
-        if (typeof payload[el.name] === "undefined") {
-            payload[el.name] = el.value;
-        } else {
-            if (Array.isArray(payload[el.name])) {
-                payload[el.name].push(el.value);
-            } else {
-                payload[el.name] = [payload[el.name], el.value];
-            }
-        }
-    }
-    for (const child of el.children) getPayload(payload, child);
-}
+let state = {};
+const plugins = [
+    {
+        name: "animations",
 
-function applyPayload(beforePayload, el) {
-    for (const [k, v] of Object.entries(beforePayload)) {
-        if (Array.isArray(v)) {
-            const elements = el.querySelectorAll("[name='"+k+"']");
-            for (let i = 0; i < v.length; i++) {
-                if (i >= elements.length) break;
-                elements[i].value = v[i];
+        async onCreate(slot) {
+            console.log("creating state for slot " + slot.id);
+            if (state[slot.id]) {
+                console.error("State already exists for slot "+slot.id);
             }
-        } else {
-            el.querySelector("[name='"+k+"']").value = v;
-        }
-    }
-}
+            state[slot.id] = {};
 
-export const delay = ms => new Promise((resolve) => setTimeout(resolve, ms));
+
+            // dispatcher:
+            state[slot.id].listeners = {};
+        },
+
+        async onLeave(slot) {
+            // TODO: this doesn't work with capture for some reason:
+            console.log("removing state for slot "+slot.id);
+            //delete state[slot.id];
+
+            // capture:
+            returners[slot.id] = null;
+            delete returners[slot.id];
+
+            // uniquify:
+            delete reserved_ids[slot.id];
+
+            // dispatcher:
+            for (const [topic, callbacks] of Object.entries(state[slot.id].listeners)) {
+                listeners[topic] = listeners[topic].filter((cb) => !callbacks.includes(cb));
+            }
+            state[slot.id].listeners = {};
+
+        },
+
+        async onBeforeShow(slot, opts) {
+            state[slot.id] = state[slot.id] ?? {};
+        },
+
+        async onShow(slot, opts) {
+            // anim:
+            const enter = opts?.enter ?? (async function(){});
+            await enter(slot.el());
+        },
+
+        async onCaptureBeforeShow(slot, opts) {
+            // capture:
+            state[slot.id].beforePayload = {};
+            getPayload(state[slot.id].beforePayload, slot.el());
+        },
+
+        async onCaptureShow(slot, opts, prm) {
+            //anim:
+            state[slot.id].showPromise = prm;
+
+            //capture:
+            if (opts?.clear !== true) {
+                // preserve the inputs that contribute to the payload:
+                applyPayload(state[slot.id].beforePayload, slot.el());
+            }
+        },
+
+        async onCaptureResolve(slot, opts) {
+            // anim:
+            await state[slot.id].showPromise;
+        },
+
+    },
+];
+
+

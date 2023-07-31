@@ -1,4 +1,6 @@
-import {Slot, init, delay, dispatch, tween, easeInOutQuad} from "./lib/slot";
+import {Slot, init} from "./lib/slot";
+import {delay, tween, easeInOutQuad} from "./lib/anim";
+    //import dispatch,
 
 const tools = [
     {name: "folders", icon: "📁"},
@@ -214,14 +216,14 @@ async function inputForm(slot, {placeholder, type}) {
         // Exit animations add to the delay on the next call.
         // Animations do NOT happen if the capture/show call does not clear the slot first (clear=true).
         const rsp = await slot.capture(`
-            <form onsubmit="return false; yeet('${slot}')">
+            <form onsubmit="yeet('${slot}'); return false;">
                 <div class="container">
                     <div class="row">
                         <div class="col-md-6">
                             <input class="form-control" type="${type}" value="" placeholder="${placeholder}" name="usr" />
                         </div>
                         <div class="col-md-6 col-sm-12 text-center">
-                            <button class="btn btn-primary" onclick="yeet('${slot}')">next &rarr;</button>
+                            <input type="submit" class="btn btn-primary" value="next" />
                         </div>
                     </div>
                 </div>
