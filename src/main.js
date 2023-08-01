@@ -1,6 +1,5 @@
 import {Slot, init} from "./lib/slot";
-import {delay, tween, easeInOutQuad} from "./lib/anim";
-    //import dispatch,
+import {delay, tween, easeInOutQuad, easeInQuad, easeInCubic, easeOutQuad, easeOutCubic, easeInOutCubic} from "./lib/anim";
 
 const tools = [
     {name: "folders", icon: "📁"},
@@ -46,6 +45,31 @@ async function thing(slot, user) {
 }
 
 async function appMenu(contentSlot, user) {
+    await intro(contentSlot, user);
+    const menuSlot = new Slot();
+    await contentSlot.show(`
+        <div> Welcome, ${user.usr}. </div>
+        <div> What would you like to do? </div>
+        <br />
+        <br />
+        <br />
+        <div id="${menuSlot}" style="display:flex; flex-wrap: wrap; justify-content: space-around;"></div>
+    `);
+
+    for (;;) {
+        const chosenTool = await captureTool(menuSlot, user);
+        await menuSlot.show(`you chose "${chosenTool}"`);
+        await delay(1500);
+        if (chosenTool === "Logout") {
+            await menuSlot.show("goodbye!");
+            await delay(1500);
+            break;
+        }
+    }
+
+}
+
+async function intro(contentSlot, user) {
     await contentSlot.show(`
         <div style="opacity:0"> Welcome, ${user.usr}. </div>
     `, {
@@ -69,24 +93,6 @@ async function appMenu(contentSlot, user) {
         }
     });
     //await delay(1000);
-    const menuSlot = new Slot();
-    await contentSlot.show(`
-        <div> Welcome, ${user.usr}. </div>
-        <div> What would you like to do? </div>
-        <div id="${menuSlot}" style="display:flex; flex-wrap: wrap; justify-content: space-around;"></div>
-    `);
-
-    for (;;) {
-        const chosenTool = await captureTool(menuSlot, user);
-        await menuSlot.show(`you chose "${chosenTool}"`);
-        await delay(1500);
-        if (chosenTool === "Logout") {
-            await menuSlot.show("goodbye!");
-            await delay(1500);
-            break;
-        }
-    }
-
 }
 
 async function testTool(slot, user) {
@@ -115,7 +121,8 @@ async function captureTool(slot, user) {
             </div>
         </div>
     `, {
-        async onYeet(el, data) {
+        async onYeet(el, e) {
+            const data = e.detail;
             const tname = data.args[0].replace(" ", "-");
             const tool = el.querySelector(".tool." + tname);
             const othertools = [...el.querySelectorAll(".tool")].filter(t => t !== tool);
@@ -160,6 +167,8 @@ async function loginForm(slot) {
         await slot.show(`
                 <h1>XSF Login</h1>
                 <hr />
+                <br />
+                <br />
                 <div id="${loginSlot}"></div>
         `,
             {
@@ -231,17 +240,26 @@ async function inputForm(slot, {placeholder, type}) {
             </form>
         `, {
             async enter(el) {
-                el.children[0].style.transform = "translateY(2em)";
-                await tween(500, easeInOutQuad, (progress) => {
-                    el.children[0].style.transform = `translateY(${(1 - progress) * 2}em)`;
-                    el.children[0].style.opacity = progress;
+                const tgt = el.children[0];
+                const field = tgt.getElementsByTagName("input")[0];
+                field.style.position = "relative";
+                await tween(250, easeOutCubic, (progress) => {
+                    // come in from the left
+                    //tgt.style.transform = `translateX(${(-1 + progress) * 4}em)`;
+                    field.style.width = `${(progress) * 100}%`;
+                    tgt.style.opacity = progress;
                 });
                 el.querySelector("input").focus();
             },
             async leave(el) {
-                await tween(500, easeInOutQuad, (progress) => {
-                    el.children[0].style.transform = `translateY(${progress * 2}em)`;
-                    el.children[0].style.opacity = 1 - progress;
+                // go out to the right
+                const tgt = el.children[0];
+                const field = tgt.getElementsByTagName("input")[0];
+                await tween(250, easeInCubic, (progress) => {
+                    //tgt.style.transform = `translateX(${1 + progress * 4}em)`;
+                    field.style.width = `${(1 - progress) * 100}%`;
+                    field.style.left = `${progress * 100}%`;
+                    tgt.style.opacity = 1 + progress;
                 });
             },
         });

@@ -3,15 +3,29 @@ import ShowPlugin from "./show-plugin";
 const returners = {};
 window.returners = returners;
 
+function lockyeet(slotid) {
+    if (typeof slotid === "string" && slotid) {
+        yeetlocks[slotid] = yeetlocks[slotid] ?? 0;
+        yeetlocks[slotid]++;
+    }
+}
+
+function unlockyeet(slotid) {
+    if (typeof slotid === "string" && slotid) {
+        yeetlocks[slotid] = yeetlocks[slotid] ?? 0;
+        yeetlocks[slotid] = Math.max(0, yeetlocks[slotid]-1);
+    }
+}
+
 const yeetlocks = {};
 window.yeet = async (slotId, ...args) => {
     if (typeof slotId !== "string") {
         throw new Error("yeet() must be called with a slot ID, received: "+slotId);
     }
-    if (yeetlocks[slotId]) {
+    if (yeetlocks[slotId] > 0) {
         return;
     }
-    yeetlocks[slotId] = true;
+    lockyeet(slotId);
     try {
         const payload = {};
         getPayload(payload, document.getElementById(slotId));
@@ -24,7 +38,7 @@ window.yeet = async (slotId, ...args) => {
     } catch(e) {
         throw e;
     } finally {
-        yeetlocks[slotId] = false;
+        unlockyeet(slotId);
     }
 };
 
@@ -61,6 +75,15 @@ export default class Capture extends ShowPlugin {
 
     constructor(slot) {
         super(slot);
+    }
+
+    async onNeedYeetLock(callback) {
+        lockyeet(this.slot.id);
+        try {
+            await callback();
+        } finally {
+            unlockyeet(this.slot.id);
+        }
     }
 
     async onLeave() {

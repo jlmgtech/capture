@@ -1,5 +1,7 @@
 import Capture from "./plugins/capture.js";
 import Dispatcher from "./plugins/dispatcher.js";
+import AnimStart from "./plugins/anim-start.js";
+import AnimEnd from "./plugins/anim-end.js";
 
 const reserved_ids = {};
 export function init(rootID, entrypoint) {
@@ -34,6 +36,8 @@ export class Slot {
         this.plugins = [
             new Capture(this),
             new Dispatcher(this),
+            new AnimEnd(this),
+            new AnimStart(this),
         ];
         this.plugins_call("onCreate");
     }
@@ -46,10 +50,10 @@ export class Slot {
         }
     }
 
-    leave() {
+    async leave() {
         // called if the DOM element is removed OR if the slot capture is resolved.
         delete reserved_ids[this.id];
-        this.plugins_call("onLeave");
+        await this.plugins_call("onLeave");
     }
 
     // dispatcher: TODO - somehow put this in your plugin
@@ -81,10 +85,9 @@ export class Slot {
             const prm = this.show(html, opts);
             await this.plugins_call("onCaptureShow", opts??{}, prm);
             returners[this.id] = async (value) => {
-                await this.plugins_call("onCaptureResolve", opts??{});
-                // wait AT LEAST as long as the intro animation before resolving the promise:
+                await this.plugins_call("onCaptureResolve", opts??{}, {detail:value});
                 resolve(value);
-                this.leave();
+                await this.leave();
             };
         });
     }
@@ -93,77 +96,3 @@ export class Slot {
         return this.id;
     }
 }
-
-let state = {};
-const plugins = [
-    {
-        name: "animations",
-
-        async onCreate(slot) {
-            console.log("creating state for slot " + slot.id);
-            if (state[slot.id]) {
-                console.error("State already exists for slot "+slot.id);
-            }
-            state[slot.id] = {};
-
-
-            // dispatcher:
-            state[slot.id].listeners = {};
-        },
-
-        async onLeave(slot) {
-            // TODO: this doesn't work with capture for some reason:
-            console.log("removing state for slot "+slot.id);
-            //delete state[slot.id];
-
-            // capture:
-            returners[slot.id] = null;
-            delete returners[slot.id];
-
-            // uniquify:
-            delete reserved_ids[slot.id];
-
-            // dispatcher:
-            for (const [topic, callbacks] of Object.entries(state[slot.id].listeners)) {
-                listeners[topic] = listeners[topic].filter((cb) => !callbacks.includes(cb));
-            }
-            state[slot.id].listeners = {};
-
-        },
-
-        async onBeforeShow(slot, opts) {
-            state[slot.id] = state[slot.id] ?? {};
-        },
-
-        async onShow(slot, opts) {
-            // anim:
-            const enter = opts?.enter ?? (async function(){});
-            await enter(slot.el());
-        },
-
-        async onCaptureBeforeShow(slot, opts) {
-            // capture:
-            state[slot.id].beforePayload = {};
-            getPayload(state[slot.id].beforePayload, slot.el());
-        },
-
-        async onCaptureShow(slot, opts, prm) {
-            //anim:
-            state[slot.id].showPromise = prm;
-
-            //capture:
-            if (opts?.clear !== true) {
-                // preserve the inputs that contribute to the payload:
-                applyPayload(state[slot.id].beforePayload, slot.el());
-            }
-        },
-
-        async onCaptureResolve(slot, opts) {
-            // anim:
-            await state[slot.id].showPromise;
-        },
-
-    },
-];
-
-

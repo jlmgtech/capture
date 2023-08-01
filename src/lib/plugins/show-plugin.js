@@ -8,7 +8,7 @@ export default class ShowPlugin {
     async onLeave() { }
     async onBeforeShow(opts) { }
     async onShow(opts) { }
-    async onCaptureBeforeShow(opts) { }
+    async onCaptureBeforeShow(opts, prm) { }
     async onCaptureShow(opts, prm) { }
     async onCaptureResolve(opts) { }
 };
